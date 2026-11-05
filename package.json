@@ -1,0 +1,33 @@
+{
+  "name": "openclaw-creator-studio",
+  "version": "0.1.0",
+  "description": "Evidence-backed, versioned article workflows for OpenClaw agents.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.16.0 <25 || >=26.1.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:host": "node test/host-smoke.js",
+    "check": "node --check src/index.js && node --test test/*.test.js",
+    "pack:check": "npm pack --dry-run"
+  },
+  "files": [
+    "src/",
+    "skills/",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/izillionways/openclaw-creator-studio.git"
+  },
+  "openclaw": {
+    "extensions": ["./src/index.js"],
+    "compat": {
+      "pluginApi": ">=2026.10.10"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+*.tgz
+*.sqlite*
+.env
+.env.*
+.DS_Store
+OpenClaw_Creator_Studio_HANDOFF.md
+private/
+data/

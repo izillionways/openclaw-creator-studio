@@ -1,0 +1,67 @@
+{
+  "id": "creator-studio",
+  "name": "Creator Studio",
+  "version": "0.1.0",
+  "description": "Evidence-backed articles, independent review and version-bound human approval.",
+  "skills": ["./skills"],
+  "contracts": {
+    "tools": ["creator_article", "creator_review", "creator_submit", "creator_export"]
+  },
+  "toolMetadata": {
+    "creator_article": { "optional": true },
+    "creator_review": { "optional": true },
+    "creator_submit": { "optional": true },
+    "creator_export": { "optional": true }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "allowedAgents": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+      "dataDir": { "type": "string", "minLength": 1 },
+      "assetRoots": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+      "timeZone": { "type": "string", "default": "UTC" },
+      "minBodyChars": { "type": "integer", "minimum": 0, "maximum": 100000, "default": 600 },
+      "maxBodyChars": { "type": "integer", "minimum": 1, "maximum": 100000, "default": 30000 },
+      "requireBodyImage": { "type": "boolean", "default": true },
+      "maxDailyDrafts": { "type": "integer", "minimum": 1, "maximum": 100, "default": 1 },
+      "maxReviewCallsPerDay": { "type": "integer", "minimum": 1, "maximum": 100, "default": 4 },
+      "maxReviewAttempts": { "type": "integer", "minimum": 1, "maximum": 5, "default": 2 },
+      "enableReview": { "type": "boolean", "default": false },
+      "reviewTimeoutMs": { "type": "integer", "minimum": 1000, "maximum": 300000, "default": 90000 },
+      "reviewRuntimeOwners": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+      "approvers": {
+        "type": "array",
+        "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["agentId", "channel", "accountId", "senderId"],
+          "properties": {
+            "agentId": { "type": "string", "minLength": 1 },
+            "channel": { "type": "string", "minLength": 1 },
+            "accountId": { "type": "string", "minLength": 1 },
+            "senderId": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "preview": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": false },
+          "port": { "type": "integer", "minimum": 1024, "maximum": 65535, "default": 18890 },
+          "username": { "type": "string", "minLength": 1, "default": "reviewer" },
+          "passwordEnv": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$", "default": "CREATOR_STUDIO_PREVIEW_PASSWORD" },
+          "publicBaseUrl": { "type": "string" }
+        }
+      },
+      "notification": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": false },
+          "channel": { "type": "string" },
+          "accountId": { "type": "string" },
+          "to": { "type": "string" }
+        }
+      }
+    }
+  }
+}
