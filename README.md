@@ -21,13 +21,13 @@ A general-purpose OpenClaw plugin for evidence-backed articles, independent edit
 审核代码后安装固定版本：
 
 ```sh
-openclaw plugins install git:github.com/izillionways/openclaw-creator-studio@v0.1.0 --no-enable
+openclaw plugins install git:github.com/izillionways/openclaw-creator-studio@v0.1.1 --no-enable
 ```
 
 也可以下载 GitHub Release 中的安装包后执行：
 
 ```sh
-openclaw plugins install npm-pack:./openclaw-creator-studio-0.1.0.tgz --no-enable
+openclaw plugins install npm-pack:./openclaw-creator-studio-0.1.1.tgz --no-enable
 ```
 
 这两个命令会安装到执行者的 OpenClaw 环境。非交互安装新来源时，OpenClaw 可能要求 `--force`；应先检查代码和来源。发布在 GitHub，未发布到 npm 或 ClawHub。
@@ -122,19 +122,44 @@ openclaw skills list --agent writer --json
 | `creator_submit` | 返回预览地址；仅在启用固定渠道后发送通知 |
 | `creator_export` | 仅导出人工批准的当前版本 |
 
-三个 Skill 分别是 `creator-topic-research`、`creator-article-creator`、`creator-editorial-review`。正常使用时向获准 Agent 描述主题、读者、语言、平台、长度与费用权限即可；宿主应已提供所需的研究和图片工具。
+三个 Skill 分别是 `creator-topic-research`、`creator-article-creator`、`creator-editorial-review`。正常使用时向获准 Agent 描述主题、读者、语言、平台、长度与费用权限即可。研究使用已有工具或用户资料，图片由宿主已有能力或用户文件提供。
 
 稿件使用结构化文档，字段和完整 schema 见 [src/tools.js](src/tools.js)：
 
 - `title`、`summary`、`language`、可选的 `platform`。
 - `blocks`：`heading`、`paragraph`、`list`、`code`、`image`。文字按纯文本保存，不能嵌入 HTML；图片块通过 `assetId` 引用图片。
-- `sources`：唯一 `id`、公共 `url`、`title`、实际 `checkedAt`、`kind`（primary/secondary）和短证据 `excerpt`。
+- `sources`：唯一 `id`、真实公共 `url`、`title`、实际审阅资料的时间 `checkedAt`、`kind`（primary/secondary）和短证据 `excerpt`。在 excerpt 中注明读到的是原文、搜索摘要还是用户提供的资料，以及重要的获取限制；checkedAt 不是网页发布时间，也不证明该 URL 已被独立联网访问。
 - `claims`：重要论断 `text` 及对应 `sourceIds`。保存引用关系不等于已证明论断真实，审核人仍需检查。
 - `assets`：唯一 `id`、允许目录中的绝对 `path`、`alt`、`kind`（screenshot/illustration）、可选 `role`（body/cover）。截图另需已有 `sourceId` 和实际 `capturedAt`；示意图会被明确标注。
 
 创建时传稳定的 `topicKey`；同一 Agent 不能重复创建这个选题。定时任务另传稳定 `runKey`，例如任务名与日期的组合。同键同初稿返回已有文章，不同内容会被拒绝并提示恢复已有文章，不能以重试为由新增稿件。修订重新提交完整文档，图片仍使用允许目录内的导入路径。
 
 状态依次为 `draft` → `pending_human_review` → `approved_for_manual_publish` → `manually_published`。检查失败进入 `qa_failed`；人可拒绝或要求修改。修订生成新版本并使旧批准失效；正文、标题和图片变化都参与内容哈希。审核失败、取消、版本变化或人工拒绝不会被当成通过。
+
+## 资料获取与可选集成
+
+**News Aggregator、Agent-Reach 和 Exa 均不是插件的运行时依赖。** 没有安装它们不会导致插件加载失败。研究 Skill 根据当前 Agent 实际可见、获准且可用的工具选择路径；仅在其他客户端中配置的工具，不代表 OpenClaw 的这个 Agent 也能调用。
+
+| 使用者环境 | 研究方式 |
+| --- | --- |
+| 有搜索、原文读取或适合该主题的平台工具 | 复用已有工具，尊重用户指定的来源和服务 |
+| 没有合适的联网工具，或用户要求只使用所给资料 | 基于用户资料研究，并在来源记录及必要的正文中说明未独立联网核验 |
+| 没有可用工具，也没有充分资料 | 停止研究并说明缺少的能力或证据，不创建凑数稿件 |
+
+已有原始链接时可直接读取，不必先搜索；一个工具已返回足够原文时也不必重复抓取。工具缺失不触发自动安装、登录、密钥配置或付费调用。检索失败时保留已经取得的证据，说明限制，遵守工具的访问和重试规则；不静默替换用户明确要求的服务。
+
+没有联网工具不等于来源要求被取消：现有结构化稿件仍要求真实公共来源链接，审核还要求至少一个主来源。提供的私人附件若没有真实公共参考链接，只能先形成明确标注的未核验文字初稿，不能编造 URL 或来源类型来进入审批和导出。具备合格来源记录也不保证独立审核会通过。
+
+一种**可选组合**是：[News Aggregator](https://clawhub.ai/cclank/skills/news-aggregator-skill) 收集热榜候选 → 按编辑目标筛选、去重 → 用当前可用的搜索和平台工具研究 → 阅读原始资料 → 创作和审核。只有当前 Agent 能调用相应工具时，才使用这个组合：
+
+- 热榜用于发现线索，先限制来源和候选数量，再深入研究选中的题目；不默认深抓所有条目。保留真实的热度、排名、时间标签和观察时间，不把“Today”等模糊标签当作精确发布时间，也不跨榜单直接比较不同单位的分数。
+- 如果宿主已经暴露 `web_search_exa`、`web_fetch_exa`，可直接搜索和读取，不必经过 Agent-Reach 的 CLI。Exa 是可选的网页搜索路径，不是唯一研究渠道。
+- Agent-Reach 按需补充平台内容、讨论或字幕，具体能力以所装版本和真实结果为准，不要求每篇都调用。其他搜索、平台工具或用户资料同样可以完成研究。
+- 用户的主题、语言、时间范围和“没有可信候选就停止”等编辑要求优先于外部 Skill 的简报格式、最低条数或补旧新闻规则。安装和使用外部 Skill 前应核对其版本、依赖与权限；不随 Creator Studio 捆绑安装。
+
+搜索服务的 Key 继续由宿主已有的安全配置管理，Creator Studio 不保存或代为配置它，也不授予额外额度。任务说明可以指定来源、候选数、搜索次数和费用权限；这些研究限额由 Skill 执行，**不是插件程序强制的工具调用或金额上限**。
+
+这里实现的是 Skill 编排，没有新增程序层面的自动工具发现、服务切换或研究执行器。四个原生工具继续处理稿件、独立审核、提交和导出，人工批准仍绑定具体版本。
 
 ## 人工审批与发布
 
@@ -208,6 +233,8 @@ npm run pack:check
 ```
 
 `npm test` 使用临时 SQLite、合成测试文档/图片和模拟模型/渠道，覆盖版本、审批、去重、限额、竞态、导出、文件边界、HTML/Markdown 转义和真实 loopback HTTP 认证。无需付费密钥；执行环境需允许监听临时本机端口。
+
+研究相关回归测试验证：没有可选研究集成时，用户资料及其未独立读取的说明能完整传入审核和导出；仅有热榜二手来源时，规则检查会在模型调用前阻止通过。它们不证明真实 Agent 会正确执行 Skill 的选路指令，后者仍需在使用者授权的环境中联调。
 
 `npm run test:host` 需要已安装的 OpenClaw，在临时配置与 state 目录中运行真实加载器，核对 4 个工具和 3 个可用 Skill 后清理。可用 `node test/host-smoke.js /absolute/path/to/unpacked/package` 验证解包产物。它不启动 Gateway，不运行模型、渠道或真实 Cron，也不验证线上 Gateway 已生效。
 

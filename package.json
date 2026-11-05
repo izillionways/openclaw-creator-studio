@@ -1,6 +1,6 @@
 {
   "name": "openclaw-creator-studio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Evidence-backed, versioned article workflows for OpenClaw agents.",
   "type": "module",
   "license": "MIT",

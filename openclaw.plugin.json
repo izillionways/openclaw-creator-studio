@@ -1,7 +1,7 @@
 {
   "id": "creator-studio",
   "name": "Creator Studio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Evidence-backed articles, independent review and version-bound human approval.",
   "skills": ["./skills"],
   "contracts": {

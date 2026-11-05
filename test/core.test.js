@@ -97,6 +97,42 @@ test('deterministic failures block model calls and human approval', async (t) =>
   assert.throws(() => f.decide(first, 'approve'), /reviewed current version/);
 });
 
+test('supplied evidence and its access limits survive review and export without research integrations', async (t) => {
+  const f = fixture(t);
+  const disclosure = 'This synthetic draft uses supplied materials; linked originals were not independently retrieved.';
+  const document = structuredClone(f.document);
+  document.blocks.unshift({ type: 'paragraph', text: disclosure });
+  document.sources[0].excerpt = disclosure + ' Synthetic evidence for local tests only.';
+  document.sources[0].checkedAt = new Date().toISOString();
+  const article = f.create({ document });
+  const request = { articleId: article.id, version: 1 };
+  assert.equal((await f.studio.review(f.context, request)).state, 'pending_human_review');
+  const reviewedInput = JSON.parse(f.calls[0].messages[0].content);
+  assert.deepEqual(reviewedInput.article.sources, article.document.sources);
+  f.decide(article, 'approve');
+  const exported = f.studio.export(f.context, request);
+  const saved = JSON.parse(readFileSync(path.join(exported.directory, 'article.json'), 'utf8'));
+  assert.deepEqual(saved.document.sources, article.document.sources);
+  assert.ok(readFileSync(path.join(exported.directory, 'article.html'), 'utf8').includes(disclosure));
+});
+
+test('secondary hot-list evidence alone cannot reach model review, approval or export', async (t) => {
+  const f = fixture(t);
+  const document = structuredClone(f.document);
+  document.sources[0] = {
+    ...document.sources[0], kind: 'secondary', title: 'Synthetic hot-list fixture',
+    excerpt: 'Discovery lead only: rank 1, heat 42 points, observed in this synthetic fixture.',
+  };
+  const article = f.create({ document });
+  const request = { articleId: article.id, version: 1 };
+  const reviewed = await f.studio.review(f.context, request);
+  assert.equal(reviewed.state, 'qa_failed');
+  assert.ok(reviewed.checks.findings.some((finding) => finding.includes('primary source')));
+  assert.equal(f.calls.length, 0);
+  assert.throws(() => f.decide(article, 'approve'), /reviewed current version/);
+  assert.throws(() => f.studio.export(f.context, request), /human approval/);
+});
+
 test('independent blockers prevent submission', async (t) => {
   const f = fixture(t, {}, async () => makeResult({ pass: false, findings: [
     { severity: 'blocker', message: 'The claim lacks supporting evidence.', sourceIds: ['source'] },
