@@ -8,16 +8,17 @@ export class CreatorStudio {
     this.config = config;
     this.directory = directory;
     this.assetRoots = assetRoots;
-    this.controllers = new Set();
+    this.controllers = new Map();
   }
 
   get store() {
     if (this.closed) throw new Error('Creator Studio has stopped.');
     return this._store ??= new Store(this.directory, this.config);
   }
-  close() {
+  async close() {
     this.closed = true;
-    for (const controller of this.controllers) controller.abort();
+    for (const controller of this.controllers.keys()) controller.abort();
+    await Promise.allSettled(this.controllers.values());
     this._store?.close();
     this._store = undefined;
   }
@@ -57,24 +58,24 @@ export class CreatorStudio {
     if (['pending_human_review', 'approved_for_manual_publish'].includes(article.state) && article.review?.pass && article.checks?.pass) return article;
     const checks = checkDocument(article.document, this.config);
     if (!checks.pass) return this.store.finishReview(context.agentId, article.id, article.version, checks, null);
-    if (!this.config.enableReview) throw new Error('Model calls are disabled. An operator must explicitly enable review.');
-    reviewModelRoute(context.getRuntimeConfig?.() ?? context.runtimeConfig ?? context.config ?? this.api.config,
-      context.agentId, this.config.reviewRuntimeOwners);
+    const route = reviewModelRoute(this.api, this.config, context);
     signal?.throwIfAborted();
     context.assertInvocationCurrent?.();
     const callId = this.store.reserveReview(context.agentId, article.id, article.version);
     const controller = new AbortController();
-    this.controllers.add(controller);
+    const finished = Promise.withResolvers();
+    this.controllers.set(controller, finished.promise);
     const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     try {
-      const { review, usage } = await independentReview(this.api, this.config, context, article, combined);
+      const { review, usage } = await independentReview(route, this.config, context, article, combined);
       this.authorize(context);
       return this.store.finishReview(context.agentId, article.id, article.version, checks, review, callId, usage);
     } catch {
-      if (this._store) this.store.failReview(callId);
-      throw new Error('Independent review failed, was cancelled or became stale. No approval was granted; inspect the configured route and retry limits.');
+      this._store?.failReview(callId);
+      throw new Error('Independent review failed, was cancelled or became stale. No approval was granted; inspect the configured route, child sessions and retry limits.');
     } finally {
       this.controllers.delete(controller);
+      finished.resolve();
     }
   }
 

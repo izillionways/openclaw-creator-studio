@@ -75,7 +75,7 @@ export const tools = [
   },
   {
     name: 'creator_review',
-    description: 'Run deterministic checks and an independent, isolated editorial review of an exact version. Requires operator opt-in and an explicit supported runtime. Calls count toward provider usage.',
+    description: 'Run deterministic checks and a tool-free editorial subagent in a fresh session for an exact version. Requires operator opt-in and an explicit supported runtime. Calls count toward provider usage. Never grant human approval.',
     parameters: versionParameters,
     invoke: (studio, context, params, signal) => studio.review(context, params, signal),
   },

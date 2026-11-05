@@ -8,9 +8,9 @@ export const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAA
 
 export function makeResult(review = { pass: true, findings: [] }) {
   return {
-    text: JSON.stringify(review), model: 'fixture/model', provider: 'fixture', agentId: 'writer',
-    execution: { mode: 'isolated-agent-runtime', owner: { kind: 'harness', id: 'codex' } },
-    usage: { inputTokens: 100, outputTokens: 30, costUsd: 0.001 },
+    role: 'assistant', content: [{ type: 'text', text: JSON.stringify(review) }], stopReason: 'stop',
+    model: 'model', provider: 'fixture',
+    usage: { input: 100, output: 30, cost: { total: 0.001 } },
   };
 }
 
@@ -26,6 +26,10 @@ export function fixture(t, overrides = {}, complete) {
     ...overrides,
   });
   const calls = [];
+  const waits = [];
+  const reads = [];
+  const deletions = [];
+  const runs = new Map();
   const sends = [];
   const api = {
     config: {
@@ -34,7 +38,35 @@ export function fixture(t, overrides = {}, complete) {
     },
     runtime: {
       state: { resolveStateDir: () => root },
-      llm: { complete: async (params) => { calls.push(params); return complete ? complete(params) : makeResult(); } },
+      subagent: {
+        run: async (params) => {
+          params.assertCurrent?.();
+          calls.push(params);
+          const runId = 'fixture-run-' + calls.length;
+          const completion = Promise.resolve(complete ? complete(params) : makeResult());
+          completion.catch(() => {});
+          runs.set(runId, { params, completion });
+          return { runId, sessionKey: params.sessionKey, runtime: { harness: 'codex', provider: 'fixture', model: 'model' } };
+        },
+        waitForRun: async (params) => {
+          waits.push(params);
+          let timer;
+          try {
+            return await Promise.race([
+              runs.get(params.runId).completion.then(() => ({ status: 'ok' }), () => ({ status: 'error' })),
+              new Promise((resolve) => { timer = setTimeout(() => resolve({ status: 'timeout' }), params.timeoutMs); }),
+            ]);
+          } finally {
+            clearTimeout(timer);
+          }
+        },
+        getSessionMessages: async (params) => {
+          reads.push(params);
+          const run = [...runs.values()].find((entry) => entry.params.sessionKey === params.sessionKey);
+          return { messages: [{ role: 'user', content: run.params.message }, await run.completion] };
+        },
+        deleteSession: async (params) => { deletions.push(params); },
+      },
       channel: { outbound: { loadAdapter: async () => ({
         sendText: async (params) => {
           params.assertDirectAdapterHandoff?.();
@@ -47,7 +79,7 @@ export function fixture(t, overrides = {}, complete) {
   const context = { agentId: 'writer', config: api.config, assertInvocationCurrent() {} };
   const human = { channel: 'test-chat', accountId: 'sandbox', senderId: 'owner', isAuthorizedSender: true };
   const studio = new CreatorStudio(api, config, path.join(root, 'data'), [media]);
-  t.after(() => { studio.close(); rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => { await studio.close(); rmSync(root, { recursive: true, force: true }); });
   const document = {
     title: 'Example evidence-backed article / 示例',
     summary: 'A synthetic fixture, not a live tool test or real research.',
@@ -69,5 +101,5 @@ export function fixture(t, overrides = {}, complete) {
   const decide = (article, action, reason = '') => studio.command({
     ...human, args: action + ' ' + article.id + ' ' + article.version + (reason ? ' ' + reason : ''),
   });
-  return { root, media, image, config, api, context, human, studio, document, calls, sends, create, decide };
+  return { root, media, image, config, api, context, human, studio, document, calls, waits, reads, deletions, sends, create, decide };
 }

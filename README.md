@@ -8,7 +8,7 @@ A general-purpose OpenClaw plugin for evidence-backed articles, independent edit
 
 - 研究、图文创作、内容审核三个配套 Skill，复用宿主已有的搜索、Browser、模型和消息渠道。
 - 结构化稿件、来源与论据关联、正文配图、主题去重、定时运行幂等键。
-- 本地规则检查 + 无写作会话历史的独立审核 completion；人工审批绑定文章 ID、版本和内容 SHA-256。
+- 本地规则检查 + 独立子 Agent 会话审核；人工审批绑定文章 ID、版本和内容 SHA-256。
 - Markdown、HTML、来源元数据和本地图片导出，供人手动导入发布平台。
 - 可选的认证预览和固定收件人通知，默认关闭。
 
@@ -16,18 +16,18 @@ A general-purpose OpenClaw plugin for evidence-backed articles, independent edit
 
 ## 环境与安装
 
-当前验证环境：OpenClaw **2026.10.10**、Node.js **24.22.2**、macOS arm64。使用该版本的原生插件工具上下文 v2、SQLite 和 isolated completion 接口；更早的 OpenClaw 不在兼容范围内。Node 范围为 `>=24.16.0 <25 || >=26.1.0`；其他系统和版本尚未实机验证。运行时没有第三方 npm 依赖。
+当前验证环境：OpenClaw **2026.10.10**、Node.js **24.22.2**、macOS arm64。使用该版本的原生插件工具上下文 v2、SQLite 和子 Agent 会话接口；更早的 OpenClaw 不在兼容范围内。Node 范围为 `>=24.16.0 <25 || >=26.1.0`；其他系统和版本尚未实机验证。运行时没有第三方 npm 依赖。
 
 审核代码后安装固定版本：
 
 ```sh
-openclaw plugins install git:github.com/izillionways/openclaw-creator-studio@v0.1.1 --no-enable
+openclaw plugins install git:github.com/izillionways/openclaw-creator-studio@v0.2.0 --no-enable
 ```
 
 也可以下载 GitHub Release 中的安装包后执行：
 
 ```sh
-openclaw plugins install npm-pack:./openclaw-creator-studio-0.1.1.tgz --no-enable
+openclaw plugins install npm-pack:./openclaw-creator-studio-0.2.0.tgz --no-enable
 ```
 
 这两个命令会安装到执行者的 OpenClaw 环境。非交互安装新来源时，OpenClaw 可能要求 `--force`；应先检查代码和来源。发布在 GitHub，未发布到 npm 或 ClawHub。
@@ -88,9 +88,11 @@ openclaw skills list --agent writer --json
 
 ## 启用独立审核与费用
 
-只有运营者明确同意模型用量后，才设置 `enableReview: true`。审核复用写作 Agent 默认模型的宿主路由，但使用独立、无工具的 completion，不携带写作对话历史。无需另建常驻审核 Agent。
+只有运营者明确同意模型用量后，才设置 `enableReview: true`。规则检查通过后，插件使用 `api.runtime.subagent.run` 创建全新的 `agent:<agentId>:subagent:creator-review-<UUID>` 会话，交入指定文章的 ID、版本、哈希、正文和证据。它不 fork 或继承写作会话历史，复用写作 Agent 已配置的默认模型与凭据，无需另建常驻审核 Agent，也不申请覆盖模型的权限。
 
-宿主模型必须配置明确的、支持无工具隔离 completion 的 **model-scoped** `agentRuntime.id`。例如在已经配置好供应商和模型的环境中：
+子 Agent 使用 `promptMode: minimal`、`lightContext: true`、`disableTools: true` 和 `deliver: false`。它只返回结构化审核意见，不能搜索、改稿、批准、发表或发消息；仍受宿主系统提示、路由和模型回退等策略约束。主流程负责按意见修订新版本，再重新审核。缺少证据会被指出，不会由审核子 Agent 自动补齐。
+
+需要已运行的 Gateway 和绑定插件身份的原生 `run`、`waitForRun`、`getSessionMessages`、`deleteSession` 接口。接口缺失时明确失败，不回退到作者自审或普通 completion。宿主模型必须配置明确的、支持无工具子 Agent 的 **model-scoped** `agentRuntime.id`。例如在已经配置好供应商和模型的环境中：
 
 ```json
 {
@@ -109,16 +111,22 @@ openclaw skills list --agent writer --json
 }
 ```
 
-默认允许 `codex`、`claude-cli` runtime owner。不要把 `agentRuntime` 写在 Agent 顶层，也不要使用 `auto`：插件会在调用前拒绝不明确的路由，并在调用后核对实际隔离模式和 owner。其他 runtime 需由运营者验证其无工具隔离契约后再加入 `reviewRuntimeOwners`。
+默认允许 `codex`、`claude-cli` runtime owner。不要把 `agentRuntime` 写在 Agent 顶层，也不要使用 `auto`：插件会在调用前拒绝不明确的路由，并核对子 Agent 的会话与接收回执中的 harness。其他 runtime 需由运营者验证其无工具契约后再加入 `reviewRuntimeOwners`。上述配置格式与旧版一致；本版本没有新增必填配置。
 
-规则检查失败时不调用模型。失败、取消或过期的模型请求也计入审核次数，避免自动重试失控。默认超时 90 秒，输出请求上限 4000 tokens；runtime 可能将 token 限制视为提示，**次数限制不是金额硬上限**。费用取决于你的供应商和订阅，插件没有固定模型价格，也不增加独立订阅费。写作、搜索、Browser、图片生成、消息渠道和外网代理的用量由各宿主服务单独计费。插件不代为启用这些服务。
+插件等待明确成功的运行结果，再从该会话读取完整 assistant 结论并校验 JSON、问题等级和来源引用。`pending` 或单次等待超时不代表完成；错误、截断、取消、版本过期和人工拒绝都不能变成通过。新审核记录包含 `mode: subagent`、`runId`、`sessionKey`，与稿件版本一起保存。
+
+成功和失败均请求原生会话删除；原生删除会停止并排空该会话的活动任务。插件等待清理成功后才接受结果，停止插件时也会等待进行中的审核清理。Gateway 不可用或清理失败时不记录通过；运营者应检查宿主中 `creator-review-` 会话后再重试。清理和运行记录的实际保留仍按宿主规则处理，不承诺清除日志或所有历史副本。进程被强制杀死时插件无法执行清理，也需由宿主或运营者处理遗留会话。
+
+规则检查失败时不调用模型。已发起但失败、取消或过期的请求仍计入审核次数，避免自动重试失控。默认 90 秒后取消审核并请求会话清理，清理本身可能额外耗时。子 Agent 接口不提供本插件可设置的 token 硬上限；**次数、超时及返回文本长度检查都不是金额硬上限**。用量仅记录宿主返回的有效数字，缺失不代表免费。费用取决于你的供应商和订阅，插件没有固定模型价格，也不增加独立订阅费。写作、搜索、Browser、图片生成、消息渠道和外网代理的用量由各宿主服务单独计费。插件不代为启用这些服务。
+
+从 0.1.x 升级时，已有审核、批准和导出记录保持原样，不会被标记成子 Agent 审核，也不会因此自动产生模型费用；新建或修订版本后的审核使用上述子 Agent 流程。
 
 ## 工具与稿件流程
 
 | 工具 | 用途 |
 | --- | --- |
 | `creator_article` | `create`、`revise`、`get`、`list`；修订必须提交当前版本 |
-| `creator_review` | 检查并独立审核指定文章和当前版本 |
+| `creator_review` | 规则检查后启动独立子 Agent，审核指定文章和当前版本 |
 | `creator_submit` | 返回预览地址；仅在启用固定渠道后发送通知 |
 | `creator_export` | 仅导出人工批准的当前版本 |
 
@@ -232,12 +240,12 @@ npm run test:host
 npm run pack:check
 ```
 
-`npm test` 使用临时 SQLite、合成测试文档/图片和模拟模型/渠道，覆盖版本、审批、去重、限额、竞态、导出、文件边界、HTML/Markdown 转义和真实 loopback HTTP 认证。无需付费密钥；执行环境需允许监听临时本机端口。
+`npm test` 使用临时 SQLite、合成测试文档/图片和模拟子 Agent/渠道，覆盖版本、审批、去重、限额、竞态、导出、文件边界、HTML/Markdown 转义和真实 loopback HTTP 认证。子 Agent 回归验证新会话、无工具/无投递参数、会话与 harness 回执、完整结论读取、等待中状态、超时取消、清理失败以及停止时等待清理。无需付费密钥；执行环境需允许监听临时本机端口。
 
 研究相关回归测试验证：没有可选研究集成时，用户资料及其未独立读取的说明能完整传入审核和导出；仅有热榜二手来源时，规则检查会在模型调用前阻止通过。它们不证明真实 Agent 会正确执行 Skill 的选路指令，后者仍需在使用者授权的环境中联调。
 
 `npm run test:host` 需要已安装的 OpenClaw，在临时配置与 state 目录中运行真实加载器，核对 4 个工具和 3 个可用 Skill 后清理。可用 `node test/host-smoke.js /absolute/path/to/unpacked/package` 验证解包产物。它不启动 Gateway，不运行模型、渠道或真实 Cron，也不验证线上 Gateway 已生效。
 
-首版未执行真实模型审核、渠道发送、公众号导入或外网代理部署。这些验收需在使用者自己的账户和授权下完成。使用 Node 内置 SQLite，首次加载可能显示其上游 experimental warning。
+未执行真实付费子 Agent 审核、渠道发送、公众号导入或外网代理部署。子 Agent 生命周期已用模拟宿主验证，加载测试不证明生产 Gateway 的子 Agent 联调已通过；仍需在使用者自己的账户和授权下验收。使用 Node 内置 SQLite，首次加载可能显示其上游 experimental warning。
 
 MIT License，见 [LICENSE](LICENSE)。

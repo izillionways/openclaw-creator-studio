@@ -1,8 +1,8 @@
 {
   "id": "creator-studio",
   "name": "Creator Studio",
-  "version": "0.1.1",
-  "description": "Evidence-backed articles, independent review and version-bound human approval.",
+  "version": "0.2.0",
+  "description": "Evidence-backed articles, independent subagent review and version-bound human approval.",
   "skills": ["./skills"],
   "contracts": {
     "tools": ["creator_article", "creator_review", "creator_submit", "creator_export"]

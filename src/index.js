@@ -85,7 +85,7 @@ export default {
           await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
           server = undefined;
         }
-        studio?.close();
+        await studio?.close();
       },
     });
   },

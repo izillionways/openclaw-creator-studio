@@ -1,9 +1,11 @@
 ---
 name: creator-editorial-review
-description: Submit an exact Creator Studio article version to isolated editorial review and hand successful drafts to a human without granting publication authority.
+description: Submit an exact Creator Studio article version to an independent editorial subagent and hand successful drafts to a human without granting publication authority.
 ---
 
-Call creator_review with the exact articleId and version. Its independent completion receives the sealed article and evidence rather than the writer's conversation. The operator must enable model calls and select an explicit supported runtime.
+Call creator_review with the exact articleId and version. After deterministic checks pass, the plugin starts an OpenClaw subagent in a fresh session with the sealed article, evidence and review instructions. It does not fork or inherit the writer's conversation. The operator must enable model calls and select an explicit supported runtime; a live Gateway with native subagent session APIs is required. Do not substitute a writer self-review or a plain completion when these APIs are unavailable.
+
+The child uses the configured agent model with a minimal prompt, lightweight context, tools disabled and message delivery disabled. It cannot search, rewrite stored articles, approve, publish or notify. It returns structured findings, which the plugin validates before recording its run/session receipt on this exact version. The plugin requests session cleanup on success, failure or cancellation and waits for cleanup before accepting a result. Missing or failed cleanup is not success. Do not automatically retry a cleanup failure; have the operator inspect the host's Creator Studio review sessions first.
 
 Check the returned deterministic findings and independent verdict. Material factual gaps, invented tests/results, misleading source use or unmarked illustrations block submission. Missing or malformed review results, unsupported isolation, cancellation and stale versions are failures, not implicit approval.
 

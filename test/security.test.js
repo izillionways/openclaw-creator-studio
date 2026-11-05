@@ -99,8 +99,8 @@ test('disabled model access and implicit runtime selection cause no model reques
   assert.equal(f.calls.length, 0);
 });
 
-test('non-isolated or contradictory model results never grant review success', async (t) => {
-  let malformed = { ...makeResult(), execution: { mode: 'direct-provider', owner: { kind: 'provider', id: 'fixture' } } };
+test('incomplete or contradictory subagent results never grant review success', async (t) => {
+  let malformed = { ...makeResult(), stopReason: 'length' };
   const f = fixture(t, {}, async () => malformed);
   const article = f.create();
   const request = { articleId: article.id, version: 1 };

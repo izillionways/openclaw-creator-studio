@@ -14,10 +14,18 @@ test('complete offline workflow seals approval and exports portable artifacts', 
   const reviewed = await f.studio.review(f.context, { articleId: article.id, version: 1 });
   assert.equal(reviewed.state, 'pending_human_review');
   assert.equal(f.calls.length, 1);
-  assert.equal(f.calls[0].messages.length, 1);
-  assert.equal(f.calls[0].execution.mode, 'isolated-agent-runtime');
-  assert.equal(f.calls[0].tools, undefined);
-  assert.equal(f.calls[0].agentId, 'writer');
+  assert.deepEqual(JSON.parse(f.calls[0].message), { articleId: article.id, version: 1, hash: article.hash, article: article.document });
+  assert.match(f.calls[0].sessionKey, /^agent:writer:subagent:creator-review-[a-f0-9-]+$/);
+  assert.equal(f.calls[0].disableTools, true);
+  assert.equal(f.calls[0].promptMode, 'minimal');
+  assert.equal(f.calls[0].lightContext, true);
+  assert.equal(f.calls[0].deliver, false);
+  assert.equal(f.calls[0].toolsAlsoAllow, undefined);
+  assert.equal(f.calls[0].model, undefined);
+  assert.equal(reviewed.review.mode, 'subagent');
+  assert.equal(reviewed.review.runId, 'fixture-run-1');
+  assert.equal(reviewed.review.sessionKey, f.calls[0].sessionKey);
+  assert.deepEqual(f.deletions, [{ sessionKey: f.calls[0].sessionKey, deleteTranscript: true }]);
   assert.equal(f.decide(reviewed, 'approve').state, 'approved_for_manual_publish');
   const exported = f.studio.export(f.context, { articleId: article.id, version: 1 });
   assert.ok(existsSync(path.join(exported.directory, 'article.html')));
@@ -73,7 +81,7 @@ test('a rejected article needs a real human revision request before an agent can
   assert.equal(second.version, 2);
 });
 
-test('run idempotency, topic deduplication and daily limits persist', (t) => {
+test('run idempotency, topic deduplication and daily limits persist', async (t) => {
   const f = fixture(t, { maxDailyDrafts: 1 });
   const first = f.create({ runKey: 'daily-1' });
   assert.equal(f.create({ runKey: 'daily-1' }).id, first.id);
@@ -81,7 +89,7 @@ test('run idempotency, topic deduplication and daily limits persist', (t) => {
   assert.throws(() => f.create({ runKey: 'daily-1', document: { ...f.document, title: 'Different payload' } }), /another payload/);
   assert.throws(() => f.create(), /Topic already exists/);
   assert.throws(() => f.create({ topicKey: 'another-topic' }), /Daily draft limit/);
-  f.studio.close();
+  await f.studio.close();
   const reopened = new CreatorStudio(f.api, f.config, path.join(f.root, 'data'), [f.media]);
   t.after(() => reopened.close());
   assert.equal(reopened.store.get('writer', first.id).hash, first.hash);
@@ -107,7 +115,7 @@ test('supplied evidence and its access limits survive review and export without 
   const article = f.create({ document });
   const request = { articleId: article.id, version: 1 };
   assert.equal((await f.studio.review(f.context, request)).state, 'pending_human_review');
-  const reviewedInput = JSON.parse(f.calls[0].messages[0].content);
+  const reviewedInput = JSON.parse(f.calls[0].message);
   assert.deepEqual(reviewedInput.article.sources, article.document.sources);
   f.decide(article, 'approve');
   const exported = f.studio.export(f.context, request);
